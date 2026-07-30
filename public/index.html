@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>files.ernestie.fr</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --violet: #6b3fa0;
+    --violet-dark: #4d2c76;
+    --violet-soft: #efe6f7;
+    --yellow: #f2c14e;
+    --ink: #1c1721;
+    --ink-soft: #4a4256;
+    --bg: #f7f4fb;
+    --card: #ffffff;
+    --danger: #d1495b;
+    --shadow: 0 4px 16px rgba(43, 20, 70, 0.1);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Work Sans', sans-serif;
+  }
+  .hidden { display: none !important; }
+
+  /* --- Login --- */
+  #login-view {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: linear-gradient(160deg, var(--violet-dark), var(--violet) 60%);
+  }
+  .login-card {
+    background: var(--card);
+    border-radius: 18px;
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+    text-align: center;
+  }
+  .lock-badge {
+    width: 52px; height: 52px;
+    background: var(--violet-soft);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
+    font-size: 24px;
+  }
+  .login-card h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+  }
+  .login-card p.sub {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 20px;
+  }
+  input[type="password"] {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 2px solid #e2d9ee;
+    font-size: 15px;
+    font-family: 'JetBrains Mono', monospace;
+    text-align: center;
+    letter-spacing: 2px;
+  }
+  input[type="password"]:focus { outline: none; border-color: var(--violet); }
+
+  .stay-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  button.primary {
+    width: 100%;
+    background: var(--violet);
+    color: #fff;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.primary:hover { background: var(--violet-dark); }
+  button.primary:disabled { opacity: 0.6; cursor: default; }
+
+  .error-msg {
+    color: var(--danger);
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .error-msg.visible { display: block; }
+
+  /* --- App --- */
+  #app-view {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+  header.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  header.app-header h1 {
+    font-size: 20px;
+    margin: 0;
+    color: var(--violet-dark);
+  }
+  header.app-header h1 span { color: var(--yellow); }
+  #logout-btn {
+    background: none;
+    border: 1px solid #ddd0ea;
+    color: var(--ink-soft);
+    font-size: 12px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .search-bar {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 2px solid #e2d9ee;
+    font-size: 14px;
+    margin-bottom: 16px;
+    background: var(--card);
+  }
+  .search-bar:focus { outline: none; border-color: var(--violet); }
+
+  #upload-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--yellow);
+    color: var(--ink);
+    border: none;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 16px;
+  }
+
+  #upload-panel {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow);
+  }
+  #upload-panel label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--ink-soft);
+    margin: 12px 0 6px;
+  }
+  #upload-panel label:first-child { margin-top: 0; }
+  #upload-panel input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 2px solid #e2d9ee;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+  }
+  #upload-panel input[type="file"] { width: 100%; font-size: 13px; }
+  .upload-btn-row { display: flex; gap: 8px; margin-top: 16px; }
+  .upload-btn-row button { flex: 1; }
+  button.secondary {
+    background: transparent;
+    border: 2px solid #ddd0ea;
+    color: var(--ink-soft);
+    padding: 10px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .file-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-row {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow);
+    text-decoration: none;
+    color: inherit;
+  }
+  .file-icon {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    background: var(--violet-soft);
+    color: var(--violet-dark);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .file-meta { flex: 1; min-width: 0; }
+  .file-name {
+    font-weight: 600;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .file-sub {
+    font-size: 12px;
+    color: var(--ink-soft);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .delete-btn {
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 6px;
+    flex-shrink: 0;
+  }
+  .delete-btn:hover { color: var(--danger); }
+
+  .empty-state {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 14px;
+    padding: 40px 20px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Écran de connexion -->
+<div id="login-view">
+  <div class="login-card">
+    <div class="lock-badge">🔒</div>
+    <h1>files.ernestie.fr</h1>
+    <p class="sub">Espace privé — entre le mot de passe</p>
+    <form id="login-form">
+      <input type="password" id="password" placeholder="••••••••" required autofocus>
+      <div class="stay-row">
+        <input type="checkbox" id="stay-connected" checked>
+        <label for="stay-connected">Rester connecté</label>
+      </div>
+      <button type="submit" class="primary" id="login-btn">Se connecter</button>
+      <p class="error-msg" id="login-error"></p>
+    </form>
+  </div>
+</div>
+
+<!-- Application (visible après connexion) -->
+<div id="app-view" class="hidden">
+  <header class="app-header">
+    <h1>files<span>.</span>ernestie<span>.</span>fr</h1>
+    <button id="logout-btn">Déconnexion</button>
+  </header>
+
+  <input type="text" id="search" class="search-bar" placeholder="Rechercher un fichier (nom ou ID)...">
+
+  <button id="upload-toggle">+ Ajouter un fichier</button>
+
+  <div id="upload-panel" class="hidden">
+    <form id="upload-form">
+      <label for="file-id">ID du document</label>
+      <input type="text" id="file-id" placeholder="ex : releve-cesu-juin" required pattern="[a-zA-Z0-9_-]+">
+      <label for="file-input">Fichier</label>
+      <input type="file" id="file-input" required>
+      <p class="error-msg" id="upload-error"></p>
+      <div class="upload-btn-row">
+        <button type="button" class="secondary" id="cancel-upload">Annuler</button>
+        <button type="submit" class="primary" id="upload-submit">Envoyer</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="file-list" class="file-list"></div>
+  <p id="empty-state" class="empty-state hidden">Aucun fichier pour l'instant.</p>
+</div>
+
+<script>
+let allFiles = [];
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function iconFor(mimetype) {
+  if (!mimetype) return '📄';
+  if (mimetype.includes('pdf')) return '📕';
+  if (mimetype.startsWith('image/')) return '🖼️';
+  if (mimetype.includes('zip') || mimetype.includes('compressed')) return '🗜️';
+  if (mimetype.startsWith('audio/')) return '🎵';
+  if (mimetype.startsWith('video/')) return '🎬';
+  return '📄';
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderFiles(files) {
+  const listEl = document.getElementById('file-list');
+  const emptyEl = document.getElementById('empty-state');
+
+  if (files.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+  emptyEl.classList.add('hidden');
+
+  listEl.innerHTML = files.map(f => `
+    <a class="file-row" href="/${encodeURIComponent(f.id)}" target="_blank" rel="noopener">
+      <div class="file-icon">${iconFor(f.mimetype)}</div>
+      <div class="file-meta">
+        <div class="file-name">${escapeHtml(f.originalName)}</div>
+        <div class="file-sub">/${escapeHtml(f.id)} · ${formatSize(f.size)} · ${formatDate(f.uploadedAt)}</div>
+      </div>
+      <button class="delete-btn" data-id="${escapeHtml(f.id)}" title="Supprimer" onclick="return handleDelete(event, '${escapeHtml(f.id)}')">✕</button>
+    </a>
+  `).join('');
+}
+
+async function handleDelete(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!confirm(`Supprimer le fichier "${id}" ?`)) return false;
+  const res = await fetch(`/api/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (res.ok) {
+    await loadFiles();
+  } else {
+    alert('Erreur lors de la suppression');
+  }
+  return false;
+}
+
+async function loadFiles() {
+  const res = await fetch('/api/files');
+  if (!res.ok) return;
+  allFiles = await res.json();
+  applySearch();
+}
+
+function applySearch() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const filtered = q
+    ? allFiles.filter(f => f.originalName.toLowerCase().includes(q) || f.id.toLowerCase().includes(q))
+    : allFiles;
+  renderFiles(filtered);
+}
+
+document.getElementById('search').addEventListener('input', applySearch);
+
+// --- Upload panel toggle ---
+const uploadPanel = document.getElementById('upload-panel');
+document.getElementById('upload-toggle').addEventListener('click', () => {
+  uploadPanel.classList.toggle('hidden');
+});
+document.getElementById('cancel-upload').addEventListener('click', () => {
+  uploadPanel.classList.add('hidden');
+  document.getElementById('upload-form').reset();
+});
+
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const submitBtn = document.getElementById('upload-submit');
+  const errorEl = document.getElementById('upload-error');
+  errorEl.classList.remove('visible');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Envoi...';
+
+  const formData = new FormData();
+  formData.append('id', document.getElementById('file-id').value.trim());
+  formData.append('file', document.getElementById('file-input').files[0]);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'envoi');
+    document.getElementById('upload-form').reset();
+    uploadPanel.classList.add('hidden');
+    await loadFiles();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('visible');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Envoyer';
+  }
+});
+
+// --- Login ---
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const errorEl = document.getElementById('login-error');
+  errorEl.classList.remove('visible');
+  btn.disabled = true;
+  btn.textContent = 'Connexion...';
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        password: document.getElementById('password').value,
+        stayConnected: document.getElementById('stay-connected').checked
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur de connexion');
+
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get('redirect');
+    if (redirect) {
+      window.location.href = redirect;
+    } else {
+      showApp();
+    }
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.classList.add('visible');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Se connecter';
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/';
+});
+
+function showApp() {
+  document.getElementById('login-view').classList.add('hidden');
+  document.getElementById('app-view').classList.remove('hidden');
+  loadFiles();
+}
+
+function showLogin() {
+  document.getElementById('login-view').classList.remove('hidden');
+  document.getElementById('app-view').classList.add('hidden');
+}
+
+// --- Vérifie l'état de connexion au chargement ---
+(async () => {
+  const res = await fetch('/api/me');
+  const data = await res.json();
+  if (data.loggedIn) {
+    showApp();
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>
