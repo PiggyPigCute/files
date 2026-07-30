@@ -19,21 +19,33 @@ if (!PASSWORD_HASH) {
 
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DATA_FILE = path.join(DATA_DIR, 'files.json');
+const FILES_DB = path.join(DATA_DIR, 'files.json');
+const FOLDERS_DB = path.join(DATA_DIR, 'folders.json');
 
 for (const dir of [DATA_DIR, UPLOADS_DIR]) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '[]');
+if (!fs.existsSync(FILES_DB)) fs.writeFileSync(FILES_DB, '[]');
+if (!fs.existsSync(FOLDERS_DB)) fs.writeFileSync(FOLDERS_DB, '[]');
 
-function readFilesDb() {
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-}
-function writeFilesDb(list) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
-}
+function readFilesDb() { return JSON.parse(fs.readFileSync(FILES_DB, 'utf-8')); }
+function writeFilesDb(list) { fs.writeFileSync(FILES_DB, JSON.stringify(list, null, 2)); }
+function readFoldersDb() { return JSON.parse(fs.readFileSync(FOLDERS_DB, 'utf-8')); }
+function writeFoldersDb(list) { fs.writeFileSync(FOLDERS_DB, JSON.stringify(list, null, 2)); }
 
 const RESERVED_IDS = new Set(['login', 'logout', 'api', 'assets', 'favicon.ico', 'upload']);
+const SEGMENT_RE = /^[a-zA-Z0-9_ -]+$/;
+
+function isValidFolderPath(p) {
+  if (typeof p !== 'string') return false;
+  if (p === '') return true; // racine
+  const segments = p.split('/');
+  return segments.every(seg => seg.trim().length > 0 && SEGMENT_RE.test(seg.trim()));
+}
+function normalizeFolderPath(p) {
+  if (!p) return '';
+  return p.split('/').map(seg => seg.trim()).filter(Boolean).join('/');
+}
 
 app.set('trust proxy', 1); // le site tourne derrière nginx en HTTPS
 app.use(express.json());
@@ -52,17 +64,14 @@ app.use(session({
 app.use('/assets', express.static(path.join(__dirname, 'public', 'assets')));
 
 // --- Anti brute-force basique sur le login ---
-const loginAttempts = new Map(); // ip -> { count, firstAttempt }
+const loginAttempts = new Map();
 const MAX_ATTEMPTS = 6;
 const WINDOW_MS = 15 * 60 * 1000;
 
 function isRateLimited(ip) {
   const entry = loginAttempts.get(ip);
   if (!entry) return false;
-  if (Date.now() - entry.firstAttempt > WINDOW_MS) {
-    loginAttempts.delete(ip);
-    return false;
-  }
+  if (Date.now() - entry.firstAttempt > WINDOW_MS) { loginAttempts.delete(ip); return false; }
   return entry.count >= MAX_ATTEMPTS;
 }
 function recordFailedAttempt(ip) {
@@ -73,9 +82,7 @@ function recordFailedAttempt(ip) {
     entry.count++;
   }
 }
-function clearAttempts(ip) {
-  loginAttempts.delete(ip);
-}
+function clearAttempts(ip) { loginAttempts.delete(ip); }
 
 function requireAuth(req, res, next) {
   if (req.session && req.session.loggedIn) return next();
@@ -97,7 +104,7 @@ app.post('/api/login', (req, res) => {
   req.session.loggedIn = true;
   if (stayConnected) {
     req.session.cookie.maxAge = 365 * 24 * 60 * 60 * 1000; // 1 an
-  } // sinon : cookie de session, expire à la fermeture du navigateur
+  }
   res.json({ ok: true });
 });
 
@@ -109,12 +116,48 @@ app.get('/api/me', (req, res) => {
   res.json({ loggedIn: !!(req.session && req.session.loggedIn) });
 });
 
-// --- Liste des fichiers ---
+// --- Fichiers ---
 app.get('/api/files', requireAuth, (req, res) => {
   const list = readFilesDb()
-    .map(({ id, originalName, size, uploadedAt, mimetype }) => ({ id, originalName, size, uploadedAt, mimetype }))
+    .map(({ id, originalName, size, uploadedAt, mimetype, folder, public: isPublic }) =>
+      ({ id, originalName, size, uploadedAt, mimetype, folder: folder || '', public: !!isPublic }))
     .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
   res.json(list);
+});
+
+// --- Dossiers ---
+app.get('/api/folders', requireAuth, (req, res) => {
+  res.json(readFoldersDb());
+});
+
+app.post('/api/folders', requireAuth, (req, res) => {
+  const raw = (req.body && req.body.path) || '';
+  const p = normalizeFolderPath(raw);
+  if (!p || !isValidFolderPath(p)) {
+    return res.status(400).json({ error: 'Nom de dossier invalide' });
+  }
+  const folders = readFoldersDb();
+  if (folders.includes(p)) {
+    return res.status(409).json({ error: 'Ce dossier existe déjà' });
+  }
+  folders.push(p);
+  writeFoldersDb(folders);
+  res.status(201).json({ ok: true, path: p });
+});
+
+app.delete('/api/folders', requireAuth, (req, res) => {
+  const p = normalizeFolderPath((req.query && req.query.path) || '');
+  if (!p) return res.status(400).json({ error: 'Chemin manquant' });
+
+  const files = readFilesDb();
+  const folders = readFoldersDb();
+  const hasFiles = files.some(f => (f.folder || '') === p);
+  const hasSubfolders = folders.some(f => f !== p && f.startsWith(p + '/'));
+  if (hasFiles || hasSubfolders) {
+    return res.status(409).json({ error: 'Le dossier n\'est pas vide' });
+  }
+  writeFoldersDb(folders.filter(f => f !== p));
+  res.json({ ok: true });
 });
 
 const upload = multer({
@@ -125,11 +168,16 @@ const upload = multer({
 app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   try {
     const { id } = req.body;
+    const folder = normalizeFolderPath(req.body.folder || '');
+
     if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
       return res.status(400).json({ error: 'ID invalide (lettres, chiffres, - et _ uniquement)' });
     }
     if (RESERVED_IDS.has(id.toLowerCase())) {
       return res.status(400).json({ error: 'Cet ID est réservé, choisis-en un autre' });
+    }
+    if (folder && !isValidFolderPath(folder)) {
+      return res.status(400).json({ error: 'Dossier invalide' });
     }
     if (!req.file) {
       return res.status(400).json({ error: 'Aucun fichier envoyé' });
@@ -143,13 +191,27 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     const storedName = `${id}${ext}`;
     fs.writeFileSync(path.join(UPLOADS_DIR, storedName), req.file.buffer);
 
+    // Auto-crée le dossier (et ses parents) s'il n'existait pas encore
+    if (folder) {
+      const folders = readFoldersDb();
+      const segments = folder.split('/');
+      let acc = '';
+      for (const seg of segments) {
+        acc = acc ? `${acc}/${seg}` : seg;
+        if (!folders.includes(acc)) folders.push(acc);
+      }
+      writeFoldersDb(folders);
+    }
+
     const entry = {
       id,
       originalName: req.file.originalname,
       storedName,
       mimetype: req.file.mimetype,
       size: req.file.size,
-      uploadedAt: new Date().toISOString()
+      uploadedAt: new Date().toISOString(),
+      folder,
+      public: false
     };
     list.push(entry);
     writeFilesDb(list);
@@ -158,6 +220,15 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur lors de l\'upload' });
   }
+});
+
+app.patch('/api/files/:id', requireAuth, (req, res) => {
+  const list = readFilesDb();
+  const entry = list.find(f => f.id === req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Introuvable' });
+  if (typeof req.body.public === 'boolean') entry.public = req.body.public;
+  writeFilesDb(list);
+  res.json({ ok: true, public: entry.public });
 });
 
 app.delete('/api/files/:id', requireAuth, (req, res) => {
@@ -178,12 +249,15 @@ app.get('/', (req, res) => {
 
 // --- Accès direct à un document par son ID : files.ernestie.fr/mon-id ---
 app.get('/:id', (req, res) => {
-  if (!(req.session && req.session.loggedIn)) {
-    return res.redirect(`/?redirect=${encodeURIComponent('/' + req.params.id)}`);
-  }
   const list = readFilesDb();
   const entry = list.find(f => f.id === req.params.id);
+  const loggedIn = !!(req.session && req.session.loggedIn);
+
   if (!entry) return res.status(404).send('Document introuvable');
+
+  if (!entry.public && !loggedIn) {
+    return res.redirect(`/?redirect=${encodeURIComponent('/' + req.params.id)}`);
+  }
 
   const filePath = path.join(UPLOADS_DIR, entry.storedName);
   if (!fs.existsSync(filePath)) return res.status(404).send('Fichier manquant sur le serveur');
