@@ -1,7 +1,7 @@
 {
-  "name": "files-ernestie",
+  "name": "files-chruk",
   "version": "1.0.0",
-  "description": "Stockage privé de fichiers protégé par mot de passe",
+  "description": "Stockage privé de fichiers en ligne",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

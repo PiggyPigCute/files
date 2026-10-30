@@ -311,7 +311,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- Accès direct à un document par son ID : files.ernestie.fr/mon-id ---
+// --- Accès direct à un document par son ID : files.chruk.fr/mon-id ---
 app.get('/:id', (req, res) => {
   const list = readFilesDb();
   const entry = list.find(f => f.id === req.params.id);
@@ -332,5 +332,5 @@ app.get('/:id', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`files.ernestie.fr server running on port ${PORT}`);
+  console.log(`files.chruk.fr server running on port ${PORT}`);
 });

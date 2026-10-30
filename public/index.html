@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>files.ernestie.fr</title>
+<title>files.chruk.fr</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -179,6 +179,12 @@
 
   /* Mode visiteur : lecture seule */
   body.guest .auth-only { display: none !important; }
+  body:not(.guest) .guest-only { display: none !important; }
+  .guest-banner {
+    background: var(--violet-soft); color: var(--violet-dark);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+    font-size: 13px; font-weight: 500;
+  }
   .back-link {
     background: none; border: none; color: var(--ink-soft); font-size: 13px;
     margin-top: 14px; cursor: pointer; text-decoration: underline;
@@ -234,6 +240,8 @@
     <button id="logout-btn" class="header-btn hidden">Déconnexion</button>
     <button id="login-open-btn" class="header-btn hidden">🔒 Se connecter</button>
   </header>
+
+  <p class="guest-banner guest-only">🌐 Vous ne voyez actuellement que les fichiers publics.</p>
 
   <input type="text" id="search" class="search-bar" placeholder="Rechercher un fichier (nom ou ID)...">
 
