@@ -46,6 +46,25 @@ function normalizeFolderPath(p) {
   if (!p) return '';
   return p.split('/').map(seg => seg.trim()).filter(Boolean).join('/');
 }
+function validateId(id) {
+  if (!id || typeof id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return 'ID invalide (lettres, chiffres, - et _ uniquement)';
+  }
+  if (RESERVED_IDS.has(id.toLowerCase())) return 'Cet ID est réservé, choisis-en un autre';
+  return null;
+}
+// Crée le dossier et tous ses parents s'ils n'existent pas encore
+function ensureFolderExists(folder) {
+  if (!folder) return;
+  const folders = readFoldersDb();
+  let acc = '';
+  let changed = false;
+  for (const seg of folder.split('/')) {
+    acc = acc ? `${acc}/${seg}` : seg;
+    if (!folders.includes(acc)) { folders.push(acc); changed = true; }
+  }
+  if (changed) writeFoldersDb(folders);
+}
 
 app.set('trust proxy', 1); // le site tourne derrière nginx en HTTPS
 app.use(express.json());
@@ -84,8 +103,12 @@ function recordFailedAttempt(ip) {
 }
 function clearAttempts(ip) { loginAttempts.delete(ip); }
 
+function isLoggedIn(req) {
+  return !!(req.session && req.session.loggedIn);
+}
+
 function requireAuth(req, res, next) {
-  if (req.session && req.session.loggedIn) return next();
+  if (isLoggedIn(req)) return next();
   return res.status(401).json({ error: 'Non authentifié' });
 }
 
@@ -113,12 +136,15 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', (req, res) => {
-  res.json({ loggedIn: !!(req.session && req.session.loggedIn) });
+  res.json({ loggedIn: isLoggedIn(req) });
 });
 
 // --- Fichiers ---
-app.get('/api/files', requireAuth, (req, res) => {
+// Sans connexion : uniquement les fichiers publics (lecture seule)
+app.get('/api/files', (req, res) => {
+  const loggedIn = isLoggedIn(req);
   const list = readFilesDb()
+    .filter(f => loggedIn || f.public)
     .map(({ id, originalName, size, uploadedAt, mimetype, folder, public: isPublic }) =>
       ({ id, originalName, size, uploadedAt, mimetype, folder: folder || '', public: !!isPublic }))
     .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
@@ -126,8 +152,20 @@ app.get('/api/files', requireAuth, (req, res) => {
 });
 
 // --- Dossiers ---
-app.get('/api/folders', requireAuth, (req, res) => {
-  res.json(readFoldersDb());
+// Sans connexion : uniquement les dossiers qui contiennent (même indirectement) un fichier public
+app.get('/api/folders', (req, res) => {
+  const folders = readFoldersDb();
+  if (isLoggedIn(req)) return res.json(folders);
+  const visible = new Set();
+  for (const f of readFilesDb()) {
+    if (!f.public || !f.folder) continue;
+    let acc = '';
+    for (const seg of f.folder.split('/')) {
+      acc = acc ? `${acc}/${seg}` : seg;
+      visible.add(acc);
+    }
+  }
+  res.json(folders.filter(f => visible.has(f)));
 });
 
 app.post('/api/folders', requireAuth, (req, res) => {
@@ -170,12 +208,8 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     const { id } = req.body;
     const folder = normalizeFolderPath(req.body.folder || '');
 
-    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
-      return res.status(400).json({ error: 'ID invalide (lettres, chiffres, - et _ uniquement)' });
-    }
-    if (RESERVED_IDS.has(id.toLowerCase())) {
-      return res.status(400).json({ error: 'Cet ID est réservé, choisis-en un autre' });
-    }
+    const idError = validateId(id);
+    if (idError) return res.status(400).json({ error: idError });
     if (folder && !isValidFolderPath(folder)) {
       return res.status(400).json({ error: 'Dossier invalide' });
     }
@@ -192,16 +226,7 @@ app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
     fs.writeFileSync(path.join(UPLOADS_DIR, storedName), req.file.buffer);
 
     // Auto-crée le dossier (et ses parents) s'il n'existait pas encore
-    if (folder) {
-      const folders = readFoldersDb();
-      const segments = folder.split('/');
-      let acc = '';
-      for (const seg of segments) {
-        acc = acc ? `${acc}/${seg}` : seg;
-        if (!folders.includes(acc)) folders.push(acc);
-      }
-      writeFoldersDb(folders);
-    }
+    ensureFolderExists(folder);
 
     const entry = {
       id,
@@ -226,9 +251,48 @@ app.patch('/api/files/:id', requireAuth, (req, res) => {
   const list = readFilesDb();
   const entry = list.find(f => f.id === req.params.id);
   if (!entry) return res.status(404).json({ error: 'Introuvable' });
-  if (typeof req.body.public === 'boolean') entry.public = req.body.public;
-  writeFilesDb(list);
-  res.json({ ok: true, public: entry.public });
+  const body = req.body || {};
+
+  // Validation complète avant toute modification
+  const newId = body.id !== undefined && body.id !== entry.id ? body.id : null;
+  if (newId !== null) {
+    const idError = validateId(newId);
+    if (idError) return res.status(400).json({ error: idError });
+    if (list.some(f => f.id === newId)) {
+      return res.status(409).json({ error: 'Cet ID est déjà utilisé' });
+    }
+  }
+  let newFolder = null;
+  if (body.folder !== undefined) {
+    newFolder = normalizeFolderPath(typeof body.folder === 'string' ? body.folder : '');
+    if (newFolder && !isValidFolderPath(newFolder)) {
+      return res.status(400).json({ error: 'Dossier invalide' });
+    }
+  }
+
+  try {
+    if (newId !== null) {
+      const newStoredName = `${newId}${path.extname(entry.storedName)}`;
+      const oldPath = path.join(UPLOADS_DIR, entry.storedName);
+      const newPath = path.join(UPLOADS_DIR, newStoredName);
+      if (fs.existsSync(newPath)) {
+        return res.status(409).json({ error: 'Un fichier portant ce nom existe déjà sur le serveur' });
+      }
+      if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath);
+      entry.id = newId;
+      entry.storedName = newStoredName;
+    }
+    if (newFolder !== null) {
+      ensureFolderExists(newFolder);
+      entry.folder = newFolder;
+    }
+    if (typeof body.public === 'boolean') entry.public = body.public;
+    writeFilesDb(list);
+    res.json({ ok: true, id: entry.id, folder: entry.folder || '', public: !!entry.public });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur lors de la modification' });
+  }
 });
 
 app.delete('/api/files/:id', requireAuth, (req, res) => {

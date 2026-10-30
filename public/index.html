@@ -78,7 +78,7 @@
   header.app-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   header.app-header h1 { font-size: 20px; margin: 0; color: var(--violet-dark); }
   header.app-header h1 span { color: var(--yellow); }
-  #logout-btn {
+  .header-btn {
     background: none; border: 1px solid #ddd0ea; color: var(--ink-soft);
     font-size: 12px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
   }
@@ -176,18 +176,46 @@
   .icon-btn.delete-btn:hover { color: var(--danger); }
 
   .empty-state { text-align: center; color: var(--ink-soft); font-size: 14px; padding: 40px 20px; }
+
+  /* Mode visiteur : lecture seule */
+  body.guest .auth-only { display: none !important; }
+  .back-link {
+    background: none; border: none; color: var(--ink-soft); font-size: 13px;
+    margin-top: 14px; cursor: pointer; text-decoration: underline;
+  }
+
+  /* Liste des fichiers en attente d'envoi */
+  .pending-list { display: flex; flex-direction: column; gap: 10px; }
+  .pending-item { border: 2px solid #efe8f6; border-radius: 10px; padding: 10px; }
+  .pending-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); margin-bottom: 6px; }
+  .pending-head .pending-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pending-item .error-msg { margin-top: 6px; }
+  .pick-btn {
+    width: 100%; margin-top: 10px; background: var(--violet-soft); color: var(--violet-dark);
+    border: 2px dashed #cdb8e3; padding: 12px; border-radius: 10px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  /* Glisser-déposer */
+  #drop-overlay {
+    position: fixed; inset: 0; z-index: 100; pointer-events: none;
+    background: rgba(107, 63, 160, 0.85); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 700; border: 4px dashed var(--yellow);
+  }
+  .file-row[draggable="true"] { cursor: grab; }
+  .drop-target { outline: 3px dashed var(--violet); outline-offset: 2px; }
 </style>
 </head>
 <body>
 
 <!-- Écran de connexion -->
-<div id="login-view">
+<div id="login-view" class="hidden">
   <div class="login-card">
     <div class="lock-badge">🔒</div>
     <h1>files.chruk.fr</h1>
     <p class="sub">Espace privé — entre le mot de passe</p>
     <form id="login-form">
-      <input type="password" id="password" placeholder="••••••••" required autofocus>
+      <input type="password" id="password" placeholder="••••••••" required>
       <div class="stay-row">
         <input type="checkbox" id="stay-connected" checked>
         <label for="stay-connected">Rester connecté</label>
@@ -195,29 +223,31 @@
       <button type="submit" class="primary" id="login-btn">Se connecter</button>
       <p class="error-msg" id="login-error"></p>
     </form>
+    <button type="button" class="back-link" id="browse-public-btn">← Parcourir les fichiers publics</button>
   </div>
 </div>
 
-<!-- Application (visible après connexion) -->
+<!-- Application (lecture seule des fichiers publics si non connecté) -->
 <div id="app-view" class="hidden">
   <header class="app-header">
     <h1>files<span>.</span>chruk<span>.</span>fr</h1>
-    <button id="logout-btn">Déconnexion</button>
+    <button id="logout-btn" class="header-btn hidden">Déconnexion</button>
+    <button id="login-open-btn" class="header-btn hidden">🔒 Se connecter</button>
   </header>
 
   <input type="text" id="search" class="search-bar" placeholder="Rechercher un fichier (nom ou ID)...">
 
-  <div class="action-row">
+  <div class="action-row auth-only">
     <button id="upload-toggle">+ Fichier</button>
     <button id="folder-toggle">+ Dossier</button>
   </div>
 
-  <div id="upload-panel" class="panel hidden">
+  <div id="upload-panel" class="panel auth-only hidden">
     <form id="upload-form">
-      <label for="file-id">ID du document</label>
-      <input type="text" id="file-id" placeholder="ex : releve-cesu-juin" required pattern="[a-zA-Z0-9_-]+">
-      <label for="file-input">Fichier</label>
-      <input type="file" id="file-input" required>
+      <label>Fichiers à envoyer</label>
+      <div id="pending-list" class="pending-list"></div>
+      <input type="file" id="file-input" multiple class="hidden">
+      <button type="button" class="pick-btn" id="pick-files">Choisir des fichiers… (ou glisse-les sur la page)</button>
       <p class="folder-hint" id="upload-folder-hint"></p>
       <p class="error-msg" id="upload-error"></p>
       <div class="btn-row">
@@ -227,7 +257,7 @@
     </form>
   </div>
 
-  <div id="folder-panel" class="panel hidden">
+  <div id="folder-panel" class="panel auth-only hidden">
     <form id="folder-form">
       <label for="folder-name">Nom du dossier</label>
       <input type="text" id="folder-name" placeholder="ex : administratif" required>
@@ -240,16 +270,39 @@
     </form>
   </div>
 
+  <div id="edit-panel" class="panel auth-only hidden">
+    <form id="edit-form">
+      <label for="edit-id">ID du document</label>
+      <input type="text" id="edit-id" required pattern="[a-zA-Z0-9_-]+">
+      <label for="edit-folder">Dossier</label>
+      <input type="text" id="edit-folder" list="folder-options" placeholder="(racine)">
+      <datalist id="folder-options"></datalist>
+      <p class="folder-hint">Chemin complet, ex : administratif/impots — laisser vide pour la racine. Le dossier est créé s'il n'existe pas.</p>
+      <p class="error-msg" id="edit-error"></p>
+      <div class="btn-row">
+        <button type="button" class="secondary" id="cancel-edit">Annuler</button>
+        <button type="submit" class="primary" id="edit-submit">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+
   <div class="breadcrumb" id="breadcrumb"></div>
 
   <div id="file-list" class="file-list"></div>
   <p id="empty-state" class="empty-state hidden">Ce dossier est vide.</p>
 </div>
 
+<div id="drop-overlay" class="hidden">Dépose tes fichiers pour les envoyer ici</div>
+
 <script>
+let loggedIn = false;
 let allFiles = [];
 let allFolders = [];
 let currentFolder = new URLSearchParams(window.location.search).get('folder') || '';
+let pendingUploads = []; // { file, id, error }
+let editingId = null;
+
+const RESERVED_IDS = new Set(['login', 'logout', 'api', 'assets', 'favicon.ico', 'upload']);
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} o`;
@@ -271,7 +324,23 @@ function iconFor(mimetype) {
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
-  return div.innerHTML;
+  return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+// ID proposé à partir du nom de fichier : "Relevé CESU juin.pdf" -> "releve-cesu-juin"
+function slugify(name) {
+  const base = name.replace(/\.[^.]*$/, '');
+  const slug = base.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    .toLowerCase();
+  return slug || 'fichier';
+}
+function uniqueId(base) {
+  const taken = new Set([...allFiles.map(f => f.id), ...pendingUploads.map(p => p.id)]);
+  let id = base;
+  let n = 2;
+  while (taken.has(id) || RESERVED_IDS.has(id)) id = `${base}-${n++}`;
+  return id;
 }
 
 function goToFolder(path) {
@@ -280,6 +349,7 @@ function goToFolder(path) {
   if (path) url.searchParams.set('folder', path); else url.searchParams.delete('folder');
   history.replaceState({}, '', url);
   document.getElementById('search').value = '';
+  updateHints();
   render();
 }
 
@@ -287,11 +357,11 @@ function renderBreadcrumb() {
   const el = document.getElementById('breadcrumb');
   const segments = currentFolder ? currentFolder.split('/') : [];
   let acc = '';
-  let html = `<button onclick="goToFolder('')">📁 Racine</button>`;
-  segments.forEach((seg, i) => {
+  let html = `<button data-drop-folder="" onclick="goToFolder('')">📁 Racine</button>`;
+  segments.forEach(seg => {
     acc = acc ? `${acc}/${seg}` : seg;
     const path = acc;
-    html += `<span class="sep">/</span><button onclick="goToFolder('${escapeHtml(path)}')">${escapeHtml(seg)}</button>`;
+    html += `<span class="sep">/</span><button data-drop-folder="${escapeHtml(path)}" onclick="goToFolder('${escapeHtml(path)}')">${escapeHtml(seg)}</button>`;
   });
   el.innerHTML = html;
 }
@@ -317,15 +387,37 @@ async function handleDeleteFile(e, id) {
   if (res.ok) { await loadAll(); } else { alert('Erreur lors de la suppression'); }
 }
 
-async function handleTogglePublic(e, id, current) {
-  e.preventDefault();
-  e.stopPropagation();
+async function patchFile(id, changes) {
   const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ public: !current })
+    body: JSON.stringify(changes)
   });
-  if (res.ok) { await loadAll(); } else { alert('Erreur lors du changement de statut'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Erreur lors de la modification');
+  return data;
+}
+
+async function handleTogglePublic(e, id, current) {
+  e.preventDefault();
+  e.stopPropagation();
+  try {
+    await patchFile(id, { public: !current });
+    await loadAll();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function moveFile(id, folder) {
+  const file = allFiles.find(f => f.id === id);
+  if (!file || (file.folder || '') === folder) return;
+  try {
+    await patchFile(id, { folder });
+    await loadAll();
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 function render() {
@@ -345,14 +437,14 @@ function render() {
         return !rest.includes('/');
       }
       return !f.includes('/');
-    });
+    }).sort((a, b) => a.localeCompare(b, 'fr'));
     html += subfolders.map(f => {
       const label = currentFolder ? f.slice(currentFolder.length + 1) : f;
       return `
-        <button class="folder-row" onclick="goToFolder('${escapeHtml(f)}')">
+        <button class="folder-row" data-drop-folder="${escapeHtml(f)}" onclick="goToFolder('${escapeHtml(f)}')">
           <span class="folder-icon">📁</span>
           <span class="folder-name">${escapeHtml(label)}</span>
-          <span class="delete-btn" onclick="handleDeleteFolder(event, '${escapeHtml(f)}')">✕</span>
+          ${loggedIn ? `<span class="delete-btn" onclick="handleDeleteFolder(event, '${escapeHtml(f)}')">✕</span>` : ''}
         </button>
       `;
     }).join('');
@@ -363,16 +455,19 @@ function render() {
     : allFiles.filter(f => (f.folder || '') === currentFolder);
 
   html += filesToShow.map(f => `
-    <a class="file-row" href="/${encodeURIComponent(f.id)}" target="_blank" rel="noopener">
+    <a class="file-row" href="/${encodeURIComponent(f.id)}" target="_blank" rel="noopener"
+       ${loggedIn ? `draggable="true" data-file-id="${escapeHtml(f.id)}"` : ''}>
       <div class="file-icon">${iconFor(f.mimetype)}</div>
       <div class="file-meta">
         <span class="file-id-line">/${escapeHtml(f.id)}</span>
         <div class="file-sub">${escapeHtml(f.originalName)} · ${formatSize(f.size)} · ${formatDate(f.uploadedAt)}${q && f.folder ? ' · 📁 ' + escapeHtml(f.folder) : ''}</div>
       </div>
+      ${loggedIn ? `
       <div class="file-actions">
         <button class="icon-btn ${f.public ? 'public-on' : ''}" title="${f.public ? 'Public (cliquer pour rendre privé)' : 'Privé (cliquer pour rendre public)'}" onclick="handleTogglePublic(event, '${escapeHtml(f.id)}', ${f.public})">${f.public ? '🌐' : '🔒'}</button>
+        <button class="icon-btn" title="Modifier l'ID / déplacer" onclick="openEdit(event, '${escapeHtml(f.id)}')">✏️</button>
         <button class="icon-btn delete-btn" title="Supprimer" onclick="handleDeleteFile(event, '${escapeHtml(f.id)}')">✕</button>
-      </div>
+      </div>` : ''}
     </a>
   `).join('');
 
@@ -389,30 +484,94 @@ async function loadAll() {
   render();
 }
 
-// --- Panneaux upload / dossier ---
+// --- Panneaux upload / dossier / édition ---
 const uploadPanel = document.getElementById('upload-panel');
 const folderPanel = document.getElementById('folder-panel');
+const editPanel = document.getElementById('edit-panel');
 
-document.getElementById('upload-toggle').addEventListener('click', () => {
-  folderPanel.classList.add('hidden');
-  uploadPanel.classList.toggle('hidden');
+function showPanel(panel) {
+  for (const p of [uploadPanel, folderPanel, editPanel]) p.classList.toggle('hidden', p !== panel);
+}
+
+function updateHints() {
   document.getElementById('upload-folder-hint').textContent = currentFolder
     ? `Sera ajouté dans : 📁 ${currentFolder}` : 'Sera ajouté à la racine';
+  document.getElementById('folder-create-hint').textContent = currentFolder
+    ? `Sera créé dans : 📁 ${currentFolder}` : 'Sera créé à la racine';
+}
+
+document.getElementById('upload-toggle').addEventListener('click', () => {
+  if (uploadPanel.classList.contains('hidden')) {
+    updateHints();
+    showPanel(uploadPanel);
+    if (pendingUploads.length === 0) document.getElementById('file-input').click();
+  } else {
+    uploadPanel.classList.add('hidden');
+  }
 });
 document.getElementById('cancel-upload').addEventListener('click', () => {
   uploadPanel.classList.add('hidden');
-  document.getElementById('upload-form').reset();
+  pendingUploads = [];
+  renderPending();
 });
 
 document.getElementById('folder-toggle').addEventListener('click', () => {
-  uploadPanel.classList.add('hidden');
-  folderPanel.classList.toggle('hidden');
-  document.getElementById('folder-create-hint').textContent = currentFolder
-    ? `Sera créé dans : 📁 ${currentFolder}` : 'Sera créé à la racine';
+  if (folderPanel.classList.contains('hidden')) {
+    updateHints();
+    showPanel(folderPanel);
+  } else {
+    folderPanel.classList.add('hidden');
+  }
 });
 document.getElementById('cancel-folder').addEventListener('click', () => {
   folderPanel.classList.add('hidden');
   document.getElementById('folder-form').reset();
+});
+
+// --- Envoi de fichiers (sélection ou glisser-déposer) ---
+function addPendingFiles(fileList) {
+  for (const file of fileList) {
+    pendingUploads.push({ file, id: uniqueId(slugify(file.name)), error: '' });
+  }
+  updateHints();
+  showPanel(uploadPanel);
+  renderPending();
+}
+
+function renderPending() {
+  const listEl = document.getElementById('pending-list');
+  listEl.innerHTML = pendingUploads.map((p, i) => `
+    <div class="pending-item">
+      <div class="pending-head">
+        <span>${iconFor(p.file.type)}</span>
+        <span class="pending-name">${escapeHtml(p.file.name)} · ${formatSize(p.file.size)}</span>
+        <button type="button" class="icon-btn delete-btn" title="Retirer" data-remove="${i}">✕</button>
+      </div>
+      <input type="text" data-index="${i}" value="${escapeHtml(p.id)}" placeholder="ID du document" required pattern="[a-zA-Z0-9_-]+">
+      <p class="error-msg ${p.error ? 'visible' : ''}">${escapeHtml(p.error)}</p>
+    </div>
+  `).join('');
+  document.getElementById('pick-files').textContent = pendingUploads.length
+    ? '+ Ajouter d\'autres fichiers'
+    : 'Choisir des fichiers… (ou glisse-les sur la page)';
+}
+
+document.getElementById('pending-list').addEventListener('input', (e) => {
+  const i = e.target.dataset.index;
+  if (i !== undefined) pendingUploads[i].id = e.target.value.trim();
+});
+document.getElementById('pending-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-remove]');
+  if (!btn) return;
+  pendingUploads.splice(Number(btn.dataset.remove), 1);
+  renderPending();
+});
+document.getElementById('pick-files').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+document.getElementById('file-input').addEventListener('change', (e) => {
+  if (e.target.files.length) addPendingFiles(e.target.files);
+  e.target.value = '';
 });
 
 document.getElementById('upload-form').addEventListener('submit', async (e) => {
@@ -420,27 +579,140 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
   const submitBtn = document.getElementById('upload-submit');
   const errorEl = document.getElementById('upload-error');
   errorEl.classList.remove('visible');
+  if (pendingUploads.length === 0) {
+    errorEl.textContent = 'Aucun fichier sélectionné';
+    errorEl.classList.add('visible');
+    return;
+  }
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Envoi...';
 
-  const formData = new FormData();
-  formData.append('id', document.getElementById('file-id').value.trim());
-  formData.append('folder', currentFolder);
-  formData.append('file', document.getElementById('file-input').files[0]);
+  const queue = [...pendingUploads];
+  for (let i = 0; i < queue.length; i++) {
+    const p = queue[i];
+    submitBtn.textContent = queue.length > 1 ? `Envoi ${i + 1}/${queue.length}...` : 'Envoi...';
+    const formData = new FormData();
+    formData.append('id', p.id);
+    formData.append('folder', currentFolder);
+    formData.append('file', p.file);
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'envoi');
+      pendingUploads = pendingUploads.filter(x => x !== p);
+    } catch (err) {
+      p.error = err.message;
+    }
+  }
 
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Envoyer';
+  await loadAll();
+  renderPending();
+  if (pendingUploads.length === 0) uploadPanel.classList.add('hidden');
+});
+
+// Glisser des fichiers depuis l'explorateur vers la page
+const dropOverlay = document.getElementById('drop-overlay');
+let dragDepth = 0;
+function isExternalFileDrag(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+}
+window.addEventListener('dragenter', (e) => {
+  if (!isExternalFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  if (loggedIn) dropOverlay.classList.remove('hidden');
+});
+window.addEventListener('dragover', (e) => {
+  if (!isExternalFileDrag(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = loggedIn ? 'copy' : 'none';
+});
+window.addEventListener('dragleave', (e) => {
+  if (!isExternalFileDrag(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) dropOverlay.classList.add('hidden');
+});
+window.addEventListener('drop', (e) => {
+  if (!isExternalFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.add('hidden');
+  if (loggedIn && e.dataTransfer.files.length) addPendingFiles(e.dataTransfer.files);
+});
+
+// Glisser un fichier de la liste sur un dossier (ou le fil d'Ariane) pour le déplacer
+const MOVE_TYPE = 'application/x-file-id';
+document.addEventListener('dragstart', (e) => {
+  const row = e.target.closest && e.target.closest('[data-file-id]');
+  if (!row) return;
+  e.dataTransfer.setData(MOVE_TYPE, row.dataset.fileId);
+  e.dataTransfer.effectAllowed = 'move';
+});
+document.addEventListener('dragover', (e) => {
+  const target = e.target.closest && e.target.closest('[data-drop-folder]');
+  if (!target || !Array.from(e.dataTransfer.types).includes(MOVE_TYPE)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  target.classList.add('drop-target');
+});
+document.addEventListener('dragleave', (e) => {
+  const target = e.target.closest && e.target.closest('[data-drop-folder]');
+  if (target && !target.contains(e.relatedTarget)) target.classList.remove('drop-target');
+});
+function clearDropTargets() {
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+}
+document.addEventListener('dragend', clearDropTargets);
+document.addEventListener('drop', (e) => {
+  const target = e.target.closest && e.target.closest('[data-drop-folder]');
+  const id = e.dataTransfer.getData(MOVE_TYPE);
+  clearDropTargets();
+  if (!target || !id) return;
+  e.preventDefault();
+  moveFile(id, target.dataset.dropFolder);
+});
+
+// --- Modification de l'ID / de l'emplacement ---
+function openEdit(e, id) {
+  e.preventDefault();
+  e.stopPropagation();
+  const file = allFiles.find(f => f.id === id);
+  if (!file) return;
+  editingId = id;
+  document.getElementById('edit-id').value = file.id;
+  document.getElementById('edit-folder').value = file.folder || '';
+  document.getElementById('folder-options').innerHTML = [...allFolders]
+    .sort((a, b) => a.localeCompare(b, 'fr'))
+    .map(f => `<option value="${escapeHtml(f)}"></option>`).join('');
+  document.getElementById('edit-error').classList.remove('visible');
+  showPanel(editPanel);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('edit-id').focus();
+}
+document.getElementById('cancel-edit').addEventListener('click', () => {
+  editPanel.classList.add('hidden');
+  editingId = null;
+});
+document.getElementById('edit-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const submitBtn = document.getElementById('edit-submit');
+  const errorEl = document.getElementById('edit-error');
+  errorEl.classList.remove('visible');
+  submitBtn.disabled = true;
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: formData });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Erreur lors de l\'envoi');
-    document.getElementById('upload-form').reset();
-    uploadPanel.classList.add('hidden');
+    await patchFile(editingId, {
+      id: document.getElementById('edit-id').value.trim(),
+      folder: document.getElementById('edit-folder').value.trim()
+    });
+    editPanel.classList.add('hidden');
+    editingId = null;
     await loadAll();
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.classList.add('visible');
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Envoyer';
   }
 });
 
@@ -494,9 +766,10 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erreur de connexion');
 
+    loggedIn = true;
     const params = new URLSearchParams(window.location.search);
     const redirect = params.get('redirect');
-    if (redirect) {
+    if (redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
       window.location.href = redirect;
     } else {
       showApp();
@@ -514,8 +787,18 @@ document.getElementById('logout-btn').addEventListener('click', async () => {
   await fetch('/api/logout', { method: 'POST' });
   window.location.href = '/';
 });
+document.getElementById('login-open-btn').addEventListener('click', showLogin);
+document.getElementById('browse-public-btn').addEventListener('click', () => {
+  const url = new URL(window.location);
+  url.searchParams.delete('redirect');
+  history.replaceState({}, '', url);
+  showApp();
+});
 
 function showApp() {
+  document.body.classList.toggle('guest', !loggedIn);
+  document.getElementById('logout-btn').classList.toggle('hidden', !loggedIn);
+  document.getElementById('login-open-btn').classList.toggle('hidden', loggedIn);
   document.getElementById('login-view').classList.add('hidden');
   document.getElementById('app-view').classList.remove('hidden');
   loadAll();
@@ -523,12 +806,16 @@ function showApp() {
 function showLogin() {
   document.getElementById('login-view').classList.remove('hidden');
   document.getElementById('app-view').classList.add('hidden');
+  document.getElementById('password').focus();
 }
 
 (async () => {
   const res = await fetch('/api/me');
   const data = await res.json();
-  if (data.loggedIn) { showApp(); } else { showLogin(); }
+  loggedIn = data.loggedIn;
+  // Lien vers un fichier privé sans être connecté : on affiche directement le login
+  const needsLogin = !loggedIn && new URLSearchParams(window.location.search).has('redirect');
+  if (needsLogin) { showLogin(); } else { showApp(); }
 })();
 </script>
 </body>
